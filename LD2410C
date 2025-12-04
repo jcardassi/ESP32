@@ -1,0 +1,112 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ld2410.h>
+
+ld2410 radar;
+
+void inspectFrame();
+void enviarParaUbidots(int presence, int stationary_distance, int stationary_energy, int moving_distance, int moving_energy);
+
+
+const char* ssid = "CARDASSI";       // Coloque o nome do seu Wi-Fi
+const char* password = "Cardassi0904";  // Coloque a senha do seu Wi-Fi
+
+const char* ubidotsToken = "BBUS-iX2YEAlKQJEvFLp2MrAnl2zi1zJUir";  // Token do seu dispositivo Ubidots
+const char* deviceLabel = "ESP32";                  // Nome do dispositivo no Ubidots
+
+unsigned long ultimaLeitura = 0;
+const unsigned long intervalo = 500;  // tempo mínimo entre envios (ms)
+
+void setup() {
+  Serial.begin(115200);
+  Serial2.begin(256000, SERIAL_8N1, 16, 17);
+
+  // Inicializa radar
+  if (radar.begin(Serial2)) {
+    Serial.println("LD2410C conectado com sucesso!");
+  } else {
+    Serial.println("Falha ao inicializar LD2410C");
+  }
+
+  // Conecta ao Wi-Fi
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConectado ao Wi-Fi!");
+}
+
+void loop() {
+  radar.read();   // necessário ler rápido
+
+  if (millis() - ultimaLeitura >= intervalo) {
+    ultimaLeitura = millis();
+    inspectFrame();
+  }
+}
+
+void inspectFrame() {
+  if (!radar.isConnected()) {
+    Serial.println("Radar não conectado.");
+    return;
+  }
+
+  int presence = 0;
+  int stationary_distance = 0;
+  int stationary_energy = 0;
+  int moving_distance = 0;
+  int moving_energy = 0;
+
+  if (radar.presenceDetected()) {
+    presence = 1;
+    Serial.println("Movimento detectado!");
+
+    if (radar.stationaryTargetDetected()) {
+      stationary_distance = radar.stationaryTargetDistance();
+      stationary_energy = radar.stationaryTargetEnergy();
+      Serial.printf("Alvo parado: Distância=%d cm  Energia=%d\n", stationary_distance, stationary_energy);
+    }
+
+    if (radar.movingTargetDetected()) {
+      moving_distance = radar.movingTargetDistance();
+      moving_energy = radar.movingTargetEnergy();
+      Serial.printf("Alvo em movimento: Distância=%d cm  Energia=%d\n", moving_distance, moving_energy);
+    }
+  } else {
+    Serial.println("Nenhuma presença detectada.");
+  }
+
+  enviarParaUbidots(presence, stationary_distance, stationary_energy, moving_distance, moving_energy);
+}
+
+void enviarParaUbidots(int presence, int stationary_distance, int stationary_energy, int moving_distance, int moving_energy) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = String("http://industrial.api.ubidots.com/api/v1.6/devices/") + deviceLabel;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Auth-Token", ubidotsToken);
+
+  // Monta o JSON
+  String payload = "{";
+  payload += "\"presence\":" + String(presence) + ",";
+  payload += "\"stationary_distance\":" + String(stationary_distance) + ",";
+  payload += "\"stationary_energy\":" + String(stationary_energy) + ",";
+  payload += "\"moving_distance\":" + String(moving_distance) + ",";
+  payload += "\"moving_energy\":" + String(moving_energy);
+  payload += "}";
+
+  int httpResponseCode = http.POST(payload);
+
+  if (httpResponseCode > 0) {
+    Serial.printf("Dados enviados com sucesso! Código: %d\n", httpResponseCode);
+  } else {
+    Serial.printf("Erro ao enviar dados: %s\n", http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
