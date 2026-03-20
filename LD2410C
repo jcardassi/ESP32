@@ -8,10 +8,10 @@ void inspectFrame();
 void enviarParaUbidots(int presence, int stationary_distance, int stationary_energy, int moving_distance, int moving_energy);
 
 
-const char* ssid = "CARDASSI";       // Coloque o nome do seu Wi-Fi
-const char* password = "Cardassi0904";  // Coloque a senha do seu Wi-Fi
+const char* ssid = "CARDASSI";       // Nome do Wi-Fi
+const char* password = "Cardassi****";  // Senha do Wi-Fi
 
-const char* ubidotsToken = "BBUS-iX2YEAlKQJEvFLp2MrAnl2zi1zJUir";  // Token do seu dispositivo Ubidots
+const char* ubidotsToken = "BBUS-iX2YEAlKQJEvFLp2MrAnl2zi1zJUir";  // Token do dispositivo Ubidots
 const char* deviceLabel = "ESP32";                  // Nome do dispositivo no Ubidots
 
 unsigned long ultimaLeitura = 0;
@@ -39,7 +39,7 @@ void setup() {
 }
 
 void loop() {
-  radar.read();   // necessário ler rápido
+  radar.read();
 
   if (millis() - ultimaLeitura >= intervalo) {
     ultimaLeitura = millis();
