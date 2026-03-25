@@ -8,27 +8,25 @@ void inspectFrame();
 void enviarParaUbidots(int presence, int stationary_distance, int stationary_energy, int moving_distance, int moving_energy);
 
 
-const char* ssid = "CARDASSI";       // Nome do Wi-Fi
-const char* password = "Cardassi****";  // Senha do Wi-Fi
+const char* ssid = "CARDASSI";
+const char* password = "Cardassi****";
 
 const char* ubidotsToken = "BBUS-iX2YEAlKQJEvFLp2MrAnl2zi1zJUir";  // Token do dispositivo Ubidots
-const char* deviceLabel = "ESP32";                  // Nome do dispositivo no Ubidots
+const char* deviceLabel = "ESP32";
 
 unsigned long ultimaLeitura = 0;
-const unsigned long intervalo = 500;  // tempo mínimo entre envios (ms)
+const unsigned long intervalo = 500;
 
 void setup() {
   Serial.begin(115200);
   Serial2.begin(256000, SERIAL_8N1, 16, 17);
 
-  // Inicializa radar
   if (radar.begin(Serial2)) {
     Serial.println("LD2410C conectado com sucesso!");
   } else {
     Serial.println("Falha ao inicializar LD2410C");
   }
 
-  // Conecta ao Wi-Fi
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
