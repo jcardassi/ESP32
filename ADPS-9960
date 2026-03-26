@@ -1,0 +1,48 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_APDS9960.h>
+
+Adafruit_APDS9960 apds;
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Iniciando APDS-9960...");
+
+  Wire.begin(21, 22);
+
+  if (!apds.begin()) {
+    Serial.println("ERRO: APDS-9960 nao encontrado.");
+    while (1);
+  }
+
+  apds.enableColor(true);
+  Serial.println("APDS-9960 inicializado com sucesso.");
+}
+
+void loop() {
+  uint16_t r, g, b, c;
+
+  while (!apds.colorDataReady()) {
+    delay(5);
+  }
+
+  apds.getColorData(&r, &g, &b, &c);
+
+  Serial.println("-----------------------------");
+  Serial.print("Luminosidade (clear): ");
+  Serial.println(c);
+  Serial.print("Vermelho : "); Serial.println(r);
+  Serial.print("Verde    : "); Serial.println(g);
+  Serial.print("Azul     : "); Serial.println(b);
+
+  if (c < 20) {
+    Serial.println(">> Ambiente: ESCURO");
+  } else if (c < 200) {
+    Serial.println(">> Ambiente: MEIA LUZ");
+  } else {
+    Serial.println(">> Ambiente: LUZ ACESA");
+  }
+
+  delay(2000);
+}
