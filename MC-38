@@ -1,0 +1,17 @@
+#include <Arduino.h>
+
+#define PINO_MC38 25
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  pinMode(PINO_MC38, INPUT_PULLUP);
+  Serial.println("Diagnostico MC-38");
+  Serial.println("------------------------------");
+}
+
+void loop() {
+  bool estado = digitalRead(PINO_MC38) == HIGH;
+  Serial.printf("[%lums] %s\n", millis(), estado ? "HIGH (aberta)" : "LOW (fechada)");
+  delay(500);
+}
