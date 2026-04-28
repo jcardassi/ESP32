@@ -1,0 +1,189 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME680.h>
+
+// ============================================================
+// PINOS
+// ============================================================
+#define PINO_MC38 25        // GPIO25 — pull-up interno disponivel
+#define SDA_PIN   21
+#define SCL_PIN   22
+#define RADAR_RX  16        // GPIO16 — RX2 do ESP32
+#define RADAR_TX  17        // GPIO17 — TX2 do ESP32
+
+// ============================================================
+// RADAR HLK-LD2410C
+// ============================================================
+HardwareSerial radarSerial(2);
+String inputBuffer        = "";
+String statusPresenca     = "OFF";
+int    distanciaAtual     = 0;
+unsigned long tempoMudancaStatus = 0;
+
+void lerRadar() {
+  while (radarSerial.available()) {
+    char c = (char)radarSerial.read();
+
+    if (c == '\n') {
+      inputBuffer.trim();
+
+      if (inputBuffer == "ON") {
+        if (statusPresenca != "ON") {
+          unsigned long agora = millis();
+          unsigned long delta = agora - tempoMudancaStatus;
+          statusPresenca      = "ON";
+          tempoMudancaStatus  = agora;
+          Serial.printf("[%lums] PRESENCA DETECTADA (OFF durou %.1fs)\n",
+                        agora, delta / 1000.0);
+        }
+
+      } else if (inputBuffer == "OFF") {
+        if (statusPresenca != "OFF") {
+          unsigned long agora = millis();
+          unsigned long delta = agora - tempoMudancaStatus;
+          statusPresenca      = "OFF";
+          distanciaAtual      = 0;
+          tempoMudancaStatus  = agora;
+          Serial.printf("[%lums] SEM PRESENCA (ON durou %.1fs)\n",
+                        agora, delta / 1000.0);
+          Serial.println("------------------------------");
+        }
+
+      } else if (inputBuffer.startsWith("Range")) {
+        distanciaAtual = inputBuffer.substring(6).toInt();
+      }
+
+      inputBuffer = "";
+
+    } else if (c != '\r') {
+      inputBuffer += c;
+    }
+  }
+}
+
+// ============================================================
+// BME680
+// ============================================================
+Adafruit_BME680 bme;
+float temperatura = 0;
+float umidade     = 0;
+float pressao     = 0;
+float iaq         = 0;
+
+bool lerBME680() {
+  if (!bme.performReading()) {
+    Serial.println("[BME680] ERRO na leitura.");
+    return false;
+  }
+  temperatura = bme.temperature;
+  umidade     = bme.humidity;
+  pressao     = bme.pressure / 100.0;
+  iaq         = bme.gas_resistance / 1000.0;
+  return true;
+}
+
+// ============================================================
+// MC-38 — sensor de porta
+// ============================================================
+bool portaAberta           = false;
+bool leituraEmObservacao   = false;
+bool observandoMudanca     = false;
+unsigned long inicioObservacao = 0;
+#define TEMPO_DEBOUNCE 200  // ms — ignora oscilacoes abaixo de 200ms
+
+void lerMC38() {
+  bool leituraAtual = digitalRead(PINO_MC38) == HIGH;
+
+  if (!observandoMudanca) {
+    // Detectou diferenca em relacao ao estado confirmado
+    if (leituraAtual != portaAberta) {
+      observandoMudanca    = true;
+      leituraEmObservacao  = leituraAtual;
+      inicioObservacao     = millis();
+    }
+  } else {
+    if (leituraAtual != leituraEmObservacao) {
+      // Oscilou durante observacao — cancela
+      observandoMudanca = false;
+    } else if ((millis() - inicioObservacao) >= TEMPO_DEBOUNCE) {
+      // Estavel pelo tempo necessario — confirma mudanca
+      portaAberta       = leituraEmObservacao;
+      observandoMudanca = false;
+      Serial.printf("[%lums] PORTA: %s\n",
+                    millis(),
+                    portaAberta ? "ABERTA" : "FECHADA");
+    }
+  }
+}
+
+// ============================================================
+// SNAPSHOT
+// ============================================================
+unsigned long ultimoSnapshot  = 0;
+#define INTERVALO_SNAPSHOT 10000  // 10s para testes — mudar para 60000 em producao
+
+void publicarSnapshot() {
+  Serial.println("========== SNAPSHOT ==========");
+  Serial.printf("Presenca  : %s\n",   statusPresenca.c_str());
+  Serial.printf("Distancia : %d mm\n", distanciaAtual);
+  Serial.printf("Porta     : %s\n",   portaAberta ? "ABERTA" : "FECHADA");
+  Serial.printf("Temp      : %.2f C\n",   temperatura);
+  Serial.printf("Umidade   : %.2f %%\n",  umidade);
+  Serial.printf("Pressao   : %.2f hPa\n", pressao);
+  Serial.printf("IAQ       : %.2f KOhms\n", iaq);
+  Serial.printf("Timestamp : %lums\n", millis());
+  Serial.println("==============================");
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Iniciando no banheiro...");
+
+  // MC-38
+  pinMode(PINO_MC38, INPUT_PULLUP);
+  portaAberta       = digitalRead(PINO_MC38) == HIGH;
+  observandoMudanca = false;
+  Serial.printf("[MC-38] OK — Estado inicial: %s\n",
+                portaAberta ? "ABERTA" : "FECHADA");
+
+  // BME680
+  Wire.begin(SDA_PIN, SCL_PIN);
+  if (!bme.begin(0x76)) {
+    Serial.println("[BME680] ERRO: nao encontrado. Verifique ligacao.");
+    while (1);
+  }
+  bme.setTemperatureOversampling(BME680_OS_8X);
+  bme.setHumidityOversampling(BME680_OS_2X);
+  bme.setPressureOversampling(BME680_OS_4X);
+  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
+  bme.setGasHeater(320, 150);
+  Serial.println("[BME680] OK");
+
+  // Radar
+  radarSerial.begin(115200, SERIAL_8N1, RADAR_RX, RADAR_TX);
+  Serial.println("[LD2410C] OK");
+
+  Serial.println("Sistema pronto.");
+  Serial.println("------------------------------");
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+void loop() {
+  lerRadar();
+  lerMC38();
+
+  if (millis() - ultimoSnapshot >= INTERVALO_SNAPSHOT) {
+    ultimoSnapshot = millis();
+    lerBME680();
+    publicarSnapshot();
+  }
+
+  delay(10);
+}
